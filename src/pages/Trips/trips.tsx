@@ -2,11 +2,14 @@ import { useMemo } from "react";
 import { LogistikaService } from "../../services/LogisticanServices";
 import type { Trip } from "../../types/trips";
 import { createTableColumns, DataTable, type TableFilterConfig } from "../../ui/table";
+import { displayJsonValue } from "../../utils/json-records";
+
+const EMPTY_TRIPS: Trip[] = [];
 
 export const Trips = () => {
   const trips = new LogistikaService();
   const { data: tripsResponse, isLoading, error } = trips.useTripsData();
-  const tripsData = tripsResponse?.items ?? [];
+  const tripsData = tripsResponse?.items ?? EMPTY_TRIPS;
 
   const columns = useMemo(
     () =>
@@ -17,8 +20,8 @@ export const Trips = () => {
           header: "Cargo",
           children: (row) => (
             <div className="space-y-1">
-              <div className="font-medium text-slate-800">{row.cargo?.name ?? "-"}</div>
-              <div className="text-xs text-slate-500">{row.cargo?.weight_t ?? 0} t</div>
+              <div className="font-medium text-slate-800">{displayJsonValue(row.cargo?.name)}</div>
+              <div className="text-xs text-slate-500">{displayJsonValue(row.cargo?.weight_t)} t</div>
             </div>
           ),
         },
@@ -28,10 +31,10 @@ export const Trips = () => {
           children: (row) => (
             <div className="space-y-1">
               <div className="font-medium text-slate-800">
-                {row.route?.from ?? "-"} → {row.route?.to ?? "-"}
+                {displayJsonValue(row.route?.from)} → {displayJsonValue(row.route?.to)}
               </div>
               <div className="text-xs text-slate-500">
-                {row.route?.from_country ?? "-"} → {row.route?.to_country ?? "-"}
+                {displayJsonValue(row.route?.from_country)} → {displayJsonValue(row.route?.to_country)}
               </div>
             </div>
           ),
@@ -41,17 +44,19 @@ export const Trips = () => {
           header: "Created At",
           children: (row) => (
             <span className="text-slate-700">
-              {row.created_at ? new Date(row.created_at).toLocaleString() : "-"}
+              {typeof row.created_at === "string" && !Number.isNaN(new Date(row.created_at).getTime())
+                ? new Date(row.created_at).toLocaleString()
+                : displayJsonValue(row.created_at)}
             </span>
           ),
         },
         {
-          key: "driver.id",
+          key: "driver.name",
           header: "Driver",
           children: (row) => (
             <div className="space-y-1">
-              <div className="font-medium text-slate-800">{row.driver?.name ?? "-"}</div>
-              <div className="text-xs text-slate-500">{row.driver?.id ?? "-"}</div>
+              <div className="font-medium text-slate-800">{displayJsonValue(row.driver?.name)}</div>
+              <div className="text-xs text-slate-500">{displayJsonValue(row.driver?.id)}</div>
             </div>
           ),
         },
@@ -72,7 +77,7 @@ export const Trips = () => {
                         : "bg-blue-100 text-blue-700"
               }`}
             >
-              {row.status}
+              {displayJsonValue(row.status)}
             </span>
           ),
         },
@@ -83,6 +88,7 @@ export const Trips = () => {
   const filterConfigs = useMemo<TableFilterConfig<Trip>[]>(
     () => [
       { key: "id", label: "ID", type: "text" },
+      { key: "cargo.name", label: "Cargo", type: "text" },
       { key: "route.from", label: "Origin", type: "text" },
       { key: "route.to", label: "Destination", type: "text" },
       { key: "created_at", label: "Created At", type: "date" },

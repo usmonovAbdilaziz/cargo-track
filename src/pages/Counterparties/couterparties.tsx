@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { LogistikaService } from "../../services/LogisticanServices";
 import type { Counterparty } from "../../types/counterparties";
 import { createTableColumns, DataTable } from "../../ui/table";
+import { displayJsonValue } from "../../utils/json-records";
 
 export const Counterparties = () => {
   const service = new LogistikaService();
@@ -70,13 +71,13 @@ export const Counterparties = () => {
                     : "rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
                 }
               >
-                {row.kind}
+                {displayJsonValue(row.kind)}
               </span>
             );
           },
         },
         { key: "phone", header: "Phone" },
-        { key: "inn", header: "INN", render: (row) => row.inn ?? "-" },
+        { key: "inn", header: "INN", render: (row) => displayJsonValue(row.inn) },
         { key: "rows", header: "Rows" },
         { key: "since", header: "Since" },
       ]),

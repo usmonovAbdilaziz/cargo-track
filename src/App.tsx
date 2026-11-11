@@ -10,20 +10,6 @@ function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(
-    () => readAuthSession().isAuthenticated,
-  );
-
-  useEffect(() => {
-    const syncAuth = () => {
-      setIsAuthenticated(readAuthSession().isAuthenticated);
-    };
-
-    syncAuth();
-    window.addEventListener("storage", syncAuth);
-    return () => window.removeEventListener("storage", syncAuth);
-  }, []);
-
   useEffect(() => {
     const session = readAuthSession();
 
@@ -45,7 +31,6 @@ function AppShell() {
         <Header
           isSidebarOpen={isSidebarOpen}
           onToggle={() => setIsSidebarOpen((prev) => !prev)}
-          isAuthenticated={isAuthenticated}
         />
       )}
 

@@ -22,6 +22,12 @@ Proyektni local kompyuterda ishga tushirish uchun quyidagi komandalar ishlatilad
 npm install
 npm run dev
 ```
+
+Demo kirish: `demo@example.com`, parol: `demo123`. Login faqat namoyish uchun va brauzerda ishlaydi; u haqiqiy autentifikatsiya yoki ma’lumotlarni himoya qilish vositasi emas. `.env` sozlash talab qilinmaydi.
+
+JSON fayllar `data/` papkasida joylashgan. Jadval yozuvlardagi qo‘shimcha maydonlarni avtomatik ustun sifatida chiqaradi; `To‘liq yozuv` orqali asl yozuvni ko‘rish mumkin. Ro‘yxat boshqa joyga ko‘chsa, yagona mos ro‘yxat aniqlanadi. Bir nechta noma’lum ro‘yxat yoki ro‘yxat topilmasa, xato ko‘rsatiladi va qaysi biri kerakligini aniqlashtirish uchun kodni moslashtirish lozim.
+
+Production build JSON fayllarni o‘z ichiga oladi, shuning uchun `data/` o‘zgartirilgandan keyin `npm run build` ni qayta ishga tushiring. Tekshiruvlarni `npm test` bilan bajarish mumkin.
 ## Hozir qaysi narsalar qolgan
 
 ### 1) Authni haqiqiy tizimga yaqinlashtirish

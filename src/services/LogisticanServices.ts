@@ -5,6 +5,7 @@ import type { Counterparty } from "../types/counterparties";
 import tripsUrl from "../../data/trips.json?url";
 import licensesUrl from "../../data/licenses.json?url";
 import counterpartiesUrl from "../../data/counterparties.json?url";
+import { extractRecords } from "../utils/json-records";
 
 const TRIPS_DATA = tripsUrl;
 const LICENSE_DATA = licensesUrl;
@@ -30,21 +31,25 @@ export class LogistikaService {
   useTripsData() {
     return useQuery<TripResponse>({
       queryKey: [TRIPS_DATA],
-      queryFn: () => readJsonFile<TripResponse>(TRIPS_DATA),
+      queryFn: async () => ({
+        items: extractRecords(await readJsonFile<unknown>(TRIPS_DATA), [["items"]]),
+      }),
     });
   }
 
   useLicenseData() {
     return useQuery<LicenseResponse>({
       queryKey: [LICENSE_DATA],
-      queryFn: () => readJsonFile<LicenseResponse>(LICENSE_DATA),
+      queryFn: async () => ({
+        data: { licenses: extractRecords(await readJsonFile<unknown>(LICENSE_DATA), [["data", "licenses"]]) },
+      }),
     });
   }
 
   useCountriesData() {
     return useQuery<Counterparty[]>({
       queryKey: [COUNTERPARTIES_DATA],
-      queryFn: () => readJsonFile<Counterparty[]>(COUNTERPARTIES_DATA),
+      queryFn: async () => extractRecords(await readJsonFile<unknown>(COUNTERPARTIES_DATA), []),
     });
   }
 }

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { CircleX, Download, Funnel } from "lucide-react";
 import { matchesDateFilter } from "../utils/date-filter";
+import { discoverFields, getFieldValue } from "../utils/json-records";
 
 export type TableColumnConfig<T extends object> = {
   key: keyof T | string;
@@ -207,26 +208,69 @@ export function DataTable<T extends object>({
     return initial;
   });
 
-  const filterConfigs = useMemo(() => {
-    if (filters && filters.length > 0) {
-      return filters;
-    }
+  const extraColumns = useMemo(() => {
+    const knownKeys = new Set(columns.map((column) => String(column.accessorKey)));
+    return discoverFields(Array.isArray(data) ? data : [])
+      .filter((field) => !knownKeys.has(field.path.join(".")) || field.path.some((part) => part.includes(".")))
+      .map((field) => ({
+        accessorKey: `__json_field__${field.id}`,
+        header: field.label,
+        getValue: (row: T) => getFieldValue(row, field.path),
+        cell: (info: { getValue: () => unknown }) => {
+          const value = info.getValue();
+          return value !== null && typeof value === "object"
+            ? JSON.stringify(value)
+            : formatDisplayValue(value);
+        },
+      }));
+  }, [columns, data]);
 
-    if (filterKey && filterOptions) {
-      return [
+  const allColumns = useMemo(() => [
+    ...columns,
+    ...extraColumns,
+    {
+      accessorKey: "__json_record_details__",
+      header: "To‘liq yozuv",
+      enableSorting: false,
+      getValue: (row: T) => JSON.stringify(row),
+      cell: (info: { row: { original: T } }) => (
+        <details className="min-w-32">
+          <summary className="cursor-pointer text-blue-700">Ko‘rish</summary>
+          <pre className="mt-2 max-w-md whitespace-pre-wrap break-all text-xs">
+            {JSON.stringify(info.row.original, null, 2)}
+          </pre>
+        </details>
+      ),
+    },
+  ], [columns, extraColumns]);
+
+  const getColumnValue = useCallback((row: T, key: string): unknown => {
+    const column = allColumns.find((item) => String(item.accessorKey) === key);
+    return column?.getValue ? column.getValue(row) : getNestedValue(row, key);
+  }, [allColumns]);
+
+  const filterConfigs = useMemo<TableFilterConfig<T>[]>(() => {
+    let configured: TableFilterConfig<T>[] = filters ?? [];
+
+    if (configured.length === 0 && filterKey && filterOptions) {
+      configured = [
         { key: filterKey, label: String(filterKey), options: filterOptions },
       ];
     }
 
-    return [];
-  }, [filterKey, filterOptions, filters]);
+    return [...configured, ...extraColumns.map((column) => ({
+      key: column.accessorKey,
+      label: column.header,
+      type: "text" as const,
+    }))];
+  }, [filterKey, filterOptions, filters, extraColumns]);
 
   const visibleColumns = useMemo(() => {
-    return columns.filter((column) => {
+    return allColumns.filter((column) => {
       const key = String(column.accessorKey ?? column.id ?? column.header);
       return columnVisibility[key] !== false;
     });
-  }, [columnVisibility, columns]);
+  }, [columnVisibility, allColumns]);
 
   const filteredData = useMemo(() => {
     const safeData = Array.isArray(data) ? data : [];
@@ -240,7 +284,7 @@ export function DataTable<T extends object>({
       if (!selected || selected === "all") continue;
 
       result = result.filter((item) => {
-        const value = getNestedValue(item, key);
+        const value = getColumnValue(item, key);
         if (config.type === "date") {
           return matchesDateFilter(value, selected);
         }
@@ -260,14 +304,14 @@ export function DataTable<T extends object>({
     }
 
     return result;
-  }, [data, enableFilters, filterConfigs, filterState]);
+  }, [data, enableFilters, filterConfigs, filterState, getColumnValue]);
 
   const sortedData = useMemo<T[]>(() => {
     if (!enableSorting || !sortState) return [...filteredData];
 
     return [...filteredData].sort((a, b) => {
-      const aValue = getNestedValue(a, sortState.key);
-      const bValue = getNestedValue(b, sortState.key);
+      const aValue = getColumnValue(a, sortState.key);
+      const bValue = getColumnValue(b, sortState.key);
       const left = formatDisplayValue(aValue, "");
       const right = formatDisplayValue(bValue, "");
 
@@ -286,7 +330,7 @@ export function DataTable<T extends object>({
 
       return sortState.direction === "asc" ? comparison : -comparison;
     });
-  }, [filteredData, enableSorting, sortState]);
+  }, [filteredData, enableSorting, sortState, getColumnValue]);
 
   const totalPages = Math.max(
     1,
@@ -326,7 +370,7 @@ export function DataTable<T extends object>({
     });
   };
 
-  const allColumnOptions = columns.map((column) => ({
+  const allColumnOptions = allColumns.map((column) => ({
     key: String(column.accessorKey ?? column.id ?? column.header),
     label: String(column.header),
   }));
@@ -348,9 +392,10 @@ export function DataTable<T extends object>({
     sortedData.forEach((row) => {
       const values = visibleColumns.map((column) => {
         const key = String(column.accessorKey ?? column.id ?? column.header);
-        const value = getNestedValue(row, key);
+        const value = getColumnValue(row, key);
         const cellContent =
-          column.cell ?
+          key === "__json_record_details__" ? value
+          : column.cell ?
             column.cell({ row: { original: row }, getValue: () => value })
           : value;
 
@@ -380,11 +425,11 @@ export function DataTable<T extends object>({
         || filterConfigs.length > 0
         || enableColumnToggle
         || enableExport) && (
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           {title && (
             <h2 className="text-xl font-semibold text-slate-800">{title}</h2>
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {enableFilters && filterConfigs.length > 0 && (
               <button
                 type="button"
@@ -555,7 +600,7 @@ export function DataTable<T extends object>({
 
       {!isLoading && !error && sortedData.length > 0 && (
         <div className="max-h-[70vh] overflow-auto w-full">
-          <table className="min-w-full table-fixed text-left text-sm">
+          <table className="w-max min-w-full text-left text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-700 shadow-sm">
               <tr>
                 {visibleColumns.map((column) => {
@@ -567,8 +612,8 @@ export function DataTable<T extends object>({
                   return (
                     <th
                       key={key}
-                      className={`border-b border-slate-200 px-4 py-3 font-medium ${enableSorting ? "cursor-pointer select-none" : ""}`}
-                      onClick={() => enableSorting && handleSort(key)}
+                      className={`min-w-36 border-b border-slate-200 px-4 py-3 font-medium ${enableSorting && column.enableSorting !== false ? "cursor-pointer select-none" : ""}`}
+                      onClick={() => enableSorting && column.enableSorting !== false && handleSort(key)}
                     >
                       <div className="flex items-center gap-1">
                         <span>{column.header}</span>
@@ -594,7 +639,7 @@ export function DataTable<T extends object>({
                     const key = String(
                       column.accessorKey ?? column.id ?? column.header,
                     );
-                    const value = getNestedValue(row, key);
+                    const value = getColumnValue(row, key);
                     const cellContent =
                       column.cell ?
                         column.cell({
@@ -606,7 +651,7 @@ export function DataTable<T extends object>({
                     return (
                       <td
                         key={`${rowIndex}-${key}`}
-                        className="px-4 py-3 text-slate-700"
+                        className="max-w-80 break-words px-4 py-3 text-slate-700"
                       >
                         {cellContent}
                       </td>
@@ -620,7 +665,7 @@ export function DataTable<T extends object>({
       )}
 
       {enablePagination && !isLoading && !error && sortedData.length > 0 && (
-        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           <span>
             {sortedData.length} ta yozuvdan{" "}
             {Math.min((page - 1) * pageSize + 1, sortedData.length)}-

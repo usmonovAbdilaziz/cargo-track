@@ -13,8 +13,8 @@ const loginSchema = z.object({
 
 export const Login = () => {
   const navigate = useNavigate();
-  const email = String(import.meta.env.VITE_AUTH_EMAIL ?? "");
-  const password = String(import.meta.env.VITE_AUTH_PASSWORD ?? "");
+  const email = "demo@example.com";
+  const password = "demo123";
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -52,6 +52,7 @@ export const Login = () => {
   return (
     <div className="mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="mb-6 text-2xl font-semibold text-slate-800">Sign in</h2>
+      <p className="mb-4 text-sm text-slate-600">Demo: demo@example.com / demo123</p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
