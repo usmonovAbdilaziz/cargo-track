@@ -27,30 +27,28 @@ const readJsonFile = async <T>(url: string): Promise<T> => {
   }
 };
 
-export class LogistikaService {
-  useTripsData() {
-    return useQuery<TripResponse>({
-      queryKey: [TRIPS_DATA],
-      queryFn: async () => ({
-        items: extractRecords(await readJsonFile<unknown>(TRIPS_DATA), [["items"]]),
-      }),
-    });
-  }
+export function useTripsData() {
+  return useQuery<TripResponse>({
+    queryKey: [TRIPS_DATA],
+    queryFn: async () => ({
+      items: extractRecords(await readJsonFile<unknown>(TRIPS_DATA), [["items"]]),
+    }),
+  });
+}
 
-  useLicenseData() {
-    return useQuery<LicenseResponse>({
-      queryKey: [LICENSE_DATA],
-      queryFn: async () => ({
-        data: { licenses: extractRecords(await readJsonFile<unknown>(LICENSE_DATA), [["data", "licenses"]]) },
-      }),
-    });
-  }
+export function useLicenseData() {
+  return useQuery<LicenseResponse>({
+    queryKey: [LICENSE_DATA],
+    queryFn: async () => ({
+      data: { licenses: extractRecords(await readJsonFile<unknown>(LICENSE_DATA), [["data", "licenses"]]) },
+    }),
+  });
+}
 
-  useCountriesData() {
-    return useQuery<Counterparty[]>({
-      queryKey: [COUNTERPARTIES_DATA],
-      queryFn: async () => extractRecords(await readJsonFile<unknown>(COUNTERPARTIES_DATA), []),
-    });
-  }
+export function useCounterpartiesData() {
+  return useQuery<Counterparty[]>({
+    queryKey: [COUNTERPARTIES_DATA],
+    queryFn: async () => extractRecords(await readJsonFile<unknown>(COUNTERPARTIES_DATA), []),
+  });
 }
 

@@ -1,15 +1,36 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import {
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  createFilteredRowModel,
+  createPaginatedRowModel,
+  createSortedRowModel,
+  rowPaginationFeature,
+  rowSortingFeature,
+  tableFeatures,
+  useTable,
+  type ColumnDef,
+} from "@tanstack/react-table";
 import { CircleX, Download, Funnel } from "lucide-react";
 import { matchesDateFilter } from "../utils/date-filter";
-import { discoverFields, getFieldValue } from "../utils/json-records";
+import { discoverFields, formatFieldLabel, getFieldValue } from "../utils/json-records";
+import { formatDisplayValue } from "./table-values";
+import { StructuredValue } from "./structured-value";
+import { RecordDetails } from "./record-details";
+import type { TableColumn } from "./table-columns";
 
-export type TableColumnConfig<T extends object> = {
-  key: keyof T | string;
-  header: string;
-  className?: string;
-  render?: (row: T) => ReactNode;
-  children?: ReactNode | ((row: T) => ReactNode);
-};
+const tableFeaturesConfig = tableFeatures({
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  rowSortingFeature,
+  rowPaginationFeature,
+  filteredRowModel: createFilteredRowModel(),
+  sortedRowModel: createSortedRowModel(),
+  paginatedRowModel: createPaginatedRowModel(),
+});
+
+const EMPTY_DATA: never[] = [];
+const EMPTY_COLUMN_KEYS: readonly string[] = [];
 
 export type TableFilterOption = {
   value: string;
@@ -33,49 +54,6 @@ export type DataTableOptions = {
 };
 
 export type TableErrorState = Error | string | null | undefined;
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-};
-
-const formatDisplayValue = (value: unknown, fallback = "—"): string => {
-  if (value == null || value === "") return fallback;
-
-  if (typeof value === "string") {
-    const normalized = value.trim();
-    return normalized || fallback;
-  }
-
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? String(value) : fallback;
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "Yes" : "No";
-  }
-
-  if (Array.isArray(value)) {
-    const parts = value
-      .map((item) => formatDisplayValue(item, ""))
-      .filter((item) => item !== "");
-    return parts.length ? parts.join(", ") : fallback;
-  }
-
-  if (isRecord(value)) {
-    const props = value as { props?: { children?: unknown } };
-    if (props.props && "children" in props.props) {
-      return formatDisplayValue(props.props.children, fallback);
-    }
-
-    const nestedValues = Object.values(value)
-      .map((item) => formatDisplayValue(item, ""))
-      .filter((item) => item !== "");
-
-    return nestedValues.length ? nestedValues.join(", ") : fallback;
-  }
-
-  return fallback;
-};
 
 const getNestedValue = (obj: unknown, path: string): unknown => {
   if (!obj) return undefined;
@@ -120,32 +98,6 @@ const escapeCsvValue = (value: string) => {
   return normalized;
 };
 
-export function createTableColumns<T extends object>(
-  columns: TableColumnConfig<T>[],
-) {
-  return columns.map((column) => ({
-    accessorKey: String(column.key),
-    header: column.header,
-    cell: (info: any) => {
-      if (column.render) return column.render(info.row.original);
-
-      if (column.children !== undefined) {
-        const content =
-          typeof column.children === "function" ?
-            column.children(info.row.original)
-          : column.children;
-
-        if (content !== undefined && content !== null) {
-          return content;
-        }
-      }
-
-      const value = info.getValue();
-      return formatDisplayValue(value, "—");
-    },
-  }));
-}
-
 export function DataTable<T extends object>({
   data,
   columns,
@@ -153,6 +105,7 @@ export function DataTable<T extends object>({
   filterKey,
   filterOptions,
   filters,
+  trailingColumnKeys = EMPTY_COLUMN_KEYS,
   enableFilters = true,
   enableSorting = true,
   enableColumnToggle = true,
@@ -165,11 +118,12 @@ export function DataTable<T extends object>({
   emptyState,
 }: {
   data: T[];
-  columns: any[];
+  columns: TableColumn<T>[];
   title?: string;
   filterKey?: keyof T | string;
   filterOptions?: TableFilterOption[];
   filters?: TableFilterConfig<T>[];
+  trailingColumnKeys?: readonly string[];
   enableFilters?: boolean;
   enableSorting?: boolean;
   enableColumnToggle?: boolean;
@@ -182,72 +136,48 @@ export function DataTable<T extends object>({
   emptyState?: ReactNode;
 }) {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [sortState, setSortState] = useState<{
-    key: string;
-    direction: "asc" | "desc";
-  } | null>(null);
-  const [columnFilter, setColumnFilter] = useState<boolean>(false);
-  const [page, setPage] = useState(1);
-  const [columnVisibility, setColumnVisibility] = useState<
-    Record<string, boolean>
-  >(() => {
-    return Object.fromEntries(
-      columns.map((column) => [String(column.accessorKey), true]),
-    );
-  });
-  const [filterState, setFilterState] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
-
-    if (filterKey) initial[String(filterKey)] = "all";
-    if (filters) {
-      for (const filter of filters) {
-        initial[String(filter.key)] = "all";
-      }
-    }
-
-    return initial;
-  });
+  const [columnFilter, setColumnFilter] = useState(false);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
+  const safeData = Array.isArray(data) ? data : EMPTY_DATA;
 
   const extraColumns = useMemo(() => {
     const knownKeys = new Set(columns.map((column) => String(column.accessorKey)));
-    return discoverFields(Array.isArray(data) ? data : [])
+    const fields = discoverFields(safeData);
+    return fields
+      .filter((field) => {
+        const hasNestedFields = fields.some((other) =>
+          other.path.length > field.path.length
+          && field.path.every((part, index) => other.path[index] === part),
+        );
+        if (!hasNestedFields) return true;
+
+        return safeData.some((row) => {
+          const value = getFieldValue(row, field.path);
+          return value != null && (typeof value !== "object" || Array.isArray(value));
+        });
+      })
       .filter((field) => !knownKeys.has(field.path.join(".")) || field.path.some((part) => part.includes(".")))
       .map((field) => ({
         accessorKey: `__json_field__${field.id}`,
-        header: field.label,
+        header: formatFieldLabel(field.path),
+        fieldPath: field.path,
         getValue: (row: T) => getFieldValue(row, field.path),
-        cell: (info: { getValue: () => unknown }) => {
-          const value = info.getValue();
-          return value !== null && typeof value === "object"
-            ? JSON.stringify(value)
-            : formatDisplayValue(value);
-        },
+        cell: (info: { getValue: () => unknown }) => <StructuredValue value={info.getValue()} />,
       }));
-  }, [columns, data]);
+  }, [columns, safeData]);
 
   const allColumns = useMemo(() => [
-    ...columns,
+    ...columns.filter((column) => !trailingColumnKeys.includes(column.accessorKey)),
     ...extraColumns,
+    ...trailingColumnKeys.flatMap((key) => columns.filter((column) => column.accessorKey === key)),
     {
       accessorKey: "__json_record_details__",
       header: "To‘liq yozuv",
       enableSorting: false,
       getValue: (row: T) => JSON.stringify(row),
-      cell: (info: { row: { original: T } }) => (
-        <details className="min-w-32">
-          <summary className="cursor-pointer text-blue-700">Ko‘rish</summary>
-          <pre className="mt-2 max-w-md whitespace-pre-wrap break-all text-xs">
-            {JSON.stringify(info.row.original, null, 2)}
-          </pre>
-        </details>
-      ),
+      cell: (info: { row: { original: T } }) => <RecordDetails record={info.row.original} />,
     },
-  ], [columns, extraColumns]);
-
-  const getColumnValue = useCallback((row: T, key: string): unknown => {
-    const column = allColumns.find((item) => String(item.accessorKey) === key);
-    return column?.getValue ? column.getValue(row) : getNestedValue(row, key);
-  }, [allColumns]);
+  ], [columns, extraColumns, trailingColumnKeys]);
 
   const filterConfigs = useMemo<TableFilterConfig<T>[]>(() => {
     let configured: TableFilterConfig<T>[] = filters ?? [];
@@ -258,122 +188,92 @@ export function DataTable<T extends object>({
       ];
     }
 
-    return [...configured, ...extraColumns.map((column) => ({
-      key: column.accessorKey,
-      label: column.header,
-      type: "text" as const,
-    }))];
+    const configuredPaths = new Set(configured.map((config) => JSON.stringify(String(config.key).split("."))));
+    return [
+      ...configured,
+      ...extraColumns
+        .filter((column) => !configuredPaths.has(JSON.stringify(column.fieldPath)))
+        .map((column) => ({
+          key: column.accessorKey,
+          label: column.header,
+          type: "text" as const,
+        })),
+    ];
   }, [filterKey, filterOptions, filters, extraColumns]);
 
-  const visibleColumns = useMemo(() => {
-    return allColumns.filter((column) => {
-      const key = String(column.accessorKey ?? column.id ?? column.header);
-      return columnVisibility[key] !== false;
-    });
-  }, [columnVisibility, allColumns]);
+  const filterOnlyKeys = useMemo(() => {
+    const existingKeys = new Set(allColumns.map((column) => column.accessorKey));
+    return filterConfigs.map((config) => String(config.key)).filter((key) => !existingKeys.has(key));
+  }, [allColumns, filterConfigs]);
 
-  const filteredData = useMemo(() => {
-    const safeData = Array.isArray(data) ? data : [];
-    let result = safeData;
-    if (!enableFilters || filterConfigs.length === 0) return result;
+  const tableColumns = useMemo<ColumnDef<typeof tableFeaturesConfig, T>[]>(() => {
+    const sources: TableColumn<T>[] = [
+      ...allColumns,
+      ...filterOnlyKeys.map((key) => ({ accessorKey: key, header: key })),
+    ];
 
-    for (const config of filterConfigs) {
-      const key = String(config.key);
-      const selected = filterState[key] ?? "all";
-
-      if (!selected || selected === "all") continue;
-
-      result = result.filter((item) => {
-        const value = getColumnValue(item, key);
-        if (config.type === "date") {
-          return matchesDateFilter(value, selected);
-        }
-
-        const stringValue = formatDisplayValue(value, "").toLowerCase();
-        const filterValue = String(selected).trim().toLowerCase();
-
-        if ((config.type ?? "text") === "text") {
-          return stringValue.includes(filterValue);
-        }
-
-        return (
-          stringValue === filterValue
-          || (filterValue === "all" && stringValue !== "")
-        );
-      });
-    }
-
-    return result;
-  }, [data, enableFilters, filterConfigs, filterState, getColumnValue]);
-
-  const sortedData = useMemo<T[]>(() => {
-    if (!enableSorting || !sortState) return [...filteredData];
-
-    return [...filteredData].sort((a, b) => {
-      const aValue = getColumnValue(a, sortState.key);
-      const bValue = getColumnValue(b, sortState.key);
-      const left = formatDisplayValue(aValue, "");
-      const right = formatDisplayValue(bValue, "");
-
-      const numericLeft = Number(left);
-      const numericRight = Number(right);
-      const isNumeric =
-        !Number.isNaN(numericLeft) && !Number.isNaN(numericRight);
-
-      let comparison = 0;
-
-      if (isNumeric) {
-        comparison = numericLeft - numericRight;
-      } else {
-        comparison = left.localeCompare(right);
-      }
-
-      return sortState.direction === "asc" ? comparison : -comparison;
-    });
-  }, [filteredData, enableSorting, sortState, getColumnValue]);
-
-  const totalPages = Math.max(
-    1,
-    Math.ceil(sortedData.length / Math.max(1, pageSize)),
-  );
-
-  useEffect(() => {
-    setPage((prev) => Math.min(prev, totalPages));
-  }, [totalPages]);
-
-  const paginatedData = useMemo(() => {
-    if (!enablePagination) return sortedData;
-
-    const safePageSize = Math.max(1, pageSize);
-    const start = (page - 1) * safePageSize;
-    return sortedData.slice(start, start + safePageSize);
-  }, [enablePagination, page, pageSize, sortedData]);
-
-  const updateFilter = (key: string, value: string) => {
-    setFilterState((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const toggleColumn = (key: string) => {
-    setColumnVisibility((prev) => ({
-      ...prev,
-      [key]: prev[key] === false ? true : false,
-    }));
-  };
-
-  const handleSort = (key: string) => {
-    setSortState((prev) => {
-      if (!prev || prev.key !== key) return { key, direction: "asc" };
+    return sources.map((column) => {
+      const key = column.accessorKey;
+      const filterType = filterConfigs.find((config) => String(config.key) === key)?.type ?? "text";
       return {
-        key,
-        direction: prev.direction === "asc" ? "desc" : "asc",
+        id: key,
+        header: column.header,
+        accessorFn: (row: T) => column.getValue ? column.getValue(row) : getNestedValue(row, key),
+        cell: column.cell,
+        enableSorting: column.enableSorting !== false,
+        enableHiding: !filterOnlyKeys.includes(key),
+        sortDescFirst: false,
+        sortFn: (a, b, columnId) => {
+          const left = formatDisplayValue(a.getValue(columnId), "");
+          const right = formatDisplayValue(b.getValue(columnId), "");
+          const numericLeft = Number(left);
+          const numericRight = Number(right);
+          return !Number.isNaN(numericLeft) && !Number.isNaN(numericRight)
+            ? numericLeft - numericRight
+            : left.localeCompare(right);
+        },
+        filterFn: (row, columnId, selected) => {
+          const value = row.getValue(columnId);
+          if (filterType === "date") return matchesDateFilter(value, String(selected));
+          const text = formatDisplayValue(value, "").toLowerCase();
+          const filter = String(selected).trim().toLowerCase();
+          return filterType === "select" ? text === filter : text.includes(filter);
+        },
       };
     });
-  };
+  }, [allColumns, filterConfigs, filterOnlyKeys]);
 
-  const allColumnOptions = allColumns.map((column) => ({
-    key: String(column.accessorKey ?? column.id ?? column.header),
-    label: String(column.header),
-  }));
+  const visibility = useMemo(() => ({
+    ...columnVisibility,
+    ...Object.fromEntries(filterOnlyKeys.map((key) => [key, false])),
+  }), [columnVisibility, filterOnlyKeys]);
+
+  const table = useTable({
+    features: tableFeaturesConfig,
+    data: safeData,
+    columns: tableColumns,
+    state: { columnVisibility: visibility },
+    onColumnVisibilityChange: setColumnVisibility,
+    initialState: { pagination: { pageIndex: 0, pageSize: Math.max(1, pageSize) } },
+    enableSorting,
+    enableSortingRemoval: false,
+    enableMultiSort: false,
+    manualFiltering: !enableFilters,
+    manualPagination: !enablePagination,
+    autoResetPageIndex: true,
+  });
+
+  const visibleColumns = table.getVisibleLeafColumns();
+  const sortedRows = table.getPrePaginatedRowModel().rows;
+  const paginatedRows = table.getRowModel().rows;
+  const currentPage = table.state.pagination.pageIndex + 1;
+  const totalPages = Math.max(1, table.getPageCount());
+  const allColumnOptions = table.getAllLeafColumns().filter((column) => column.getCanHide());
+
+  const updateFilter = (key: string, value: string) => {
+    table.getColumn(key)?.setFilterValue(value || undefined);
+    table.setPageIndex(0);
+  };
 
   const errorMessage =
     typeof error === "string" ? error
@@ -381,27 +281,23 @@ export function DataTable<T extends object>({
     : "Ma`lumotlarni yuklashda xatolik yuz berdi.";
 
   const exportToCsv = () => {
-    if (!visibleColumns.length || sortedData.length === 0) return;
+    if (!visibleColumns.length || sortedRows.length === 0) return;
 
     const rows: string[] = [
       visibleColumns
-        .map((column) => escapeCsvValue(String(column.header)))
+        .map((column) => escapeCsvValue(String(column.columnDef.header)))
         .join(","),
     ];
 
-    sortedData.forEach((row) => {
-      const values = visibleColumns.map((column) => {
-        const key = String(column.accessorKey ?? column.id ?? column.header);
-        const value = getColumnValue(row, key);
+    sortedRows.forEach((row) => {
+      const values = row.getVisibleCells().map((cell) => {
+        const renderer = cell.column.columnDef.cell;
         const cellContent =
-          key === "__json_record_details__" ? value
-          : column.cell ?
-            column.cell({ row: { original: row }, getValue: () => value })
-          : value;
-
+          cell.column.id === "__json_record_details__" || cell.column.id.startsWith("__json_field__") ? cell.getValue()
+          : typeof renderer === "function" ? renderer(cell.getContext())
+          : cell.getValue();
         return escapeCsvValue(normalizeExportValue(cellContent));
       });
-
       rows.push(values.join(","));
     });
 
@@ -489,7 +385,7 @@ export function DataTable<T extends object>({
         </div>
       )}
 
-      {!isLoading && !error && sortedData.length === 0 && (
+      {!isLoading && !error && sortedRows.length === 0 && (
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600">
           {emptyState ?? "Hech qanday ma’lumot topilmadi."}
         </div>
@@ -500,7 +396,7 @@ export function DataTable<T extends object>({
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filterConfigs.map((config) => {
               const key = String(config.key);
-              const selectedValue = filterState[key] ?? "all";
+              const selectedValue = String(table.getColumn(key)?.getFilterValue() ?? "");
               const filterType = config.type ?? "text";
 
               return (
@@ -519,9 +415,9 @@ export function DataTable<T extends object>({
                       }
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-500"
                     >
-                      <option value="all">Barchasi</option>
+                      <option value="">Barchasi</option>
                       {config.options
-                        .filter((option) => option.value !== "all")
+                        .filter((option) => option.value !== "")
                         .map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
@@ -532,16 +428,16 @@ export function DataTable<T extends object>({
                     <div className="flex items-center gap-2">
                       <input
                         type="date"
-                        value={selectedValue === "all" ? "" : selectedValue}
+                        value={selectedValue}
                         onChange={(event) =>
-                          updateFilter(key, event.target.value || "all")
+                          updateFilter(key, event.target.value)
                         }
                         className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-500"
                       />
-                      {selectedValue !== "all" && (
+                      {selectedValue !== "" && (
                         <button
                           type="button"
-                          onClick={() => updateFilter(key, "all")}
+                          onClick={() => updateFilter(key, "")}
                           className="rounded-md border border-slate-200 bg-white p-2 text-slate-500 hover:text-slate-700"
                           aria-label={`Clear ${config.label ?? key} filter`}
                         >
@@ -552,17 +448,17 @@ export function DataTable<T extends object>({
                   : <div className="flex items-center gap-2">
                       <input
                         type="text"
-                        value={selectedValue === "all" ? "" : selectedValue}
+                        value={selectedValue}
                         placeholder="Barchasi"
                         onChange={(event) =>
-                          updateFilter(key, event.target.value || "all")
+                          updateFilter(key, event.target.value)
                         }
                         className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-500"
                       />
-                      {selectedValue !== "all" && (
+                      {selectedValue !== "" && (
                         <button
                           type="button"
-                          onClick={() => updateFilter(key, "all")}
+                          onClick={() => updateFilter(key, "")}
                           className="rounded-md border border-slate-200 bg-white p-2 text-slate-500 hover:text-slate-700"
                           aria-label={`Clear ${config.label ?? key} filter`}
                         >
@@ -582,81 +478,55 @@ export function DataTable<T extends object>({
           <div className="flex flex-wrap gap-3">
             {allColumnOptions.map((option) => (
               <label
-                key={option.key}
+                key={option.id}
                 className="flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
               >
                 <input
                   type="checkbox"
-                  checked={columnVisibility[option.key] !== false}
-                  onChange={() => toggleColumn(option.key)}
+                  checked={option.getIsVisible()}
+                  onChange={() => option.toggleVisibility()}
                   className="h-4 w-4 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500"
                 />
-                {option.label}
+                {String(option.columnDef.header)}
               </label>
             ))}
           </div>
         </div>
       )}
 
-      {!isLoading && !error && sortedData.length > 0 && (
+      {!isLoading && !error && sortedRows.length > 0 && (
         <div className="max-h-[70vh] overflow-auto w-full">
           <table className="w-max min-w-full text-left text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-slate-700 shadow-sm">
-              <tr>
-                {visibleColumns.map((column) => {
-                  const key = String(
-                    column.accessorKey ?? column.id ?? column.header,
-                  );
-                  const isSorted = sortState?.key === key;
-
-                  return (
-                    <th
-                      key={key}
-                      className={`min-w-36 border-b border-slate-200 px-4 py-3 font-medium ${enableSorting && column.enableSorting !== false ? "cursor-pointer select-none" : ""}`}
-                      onClick={() => enableSorting && column.enableSorting !== false && handleSort(key)}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span>{column.header}</span>
-                        {enableSorting && isSorted && (
-                          <span className="text-xs text-slate-500">
-                            {sortState?.direction === "asc" ? "↑" : "↓"}
-                          </span>
-                        )}
-                      </div>
-                    </th>
-                  );
-                })}
-              </tr>
+              {table.getHeaderGroups().map((group) => (
+                <tr key={group.id}>
+                  {group.headers.map((header) => {
+                    const isSorted = header.column.getIsSorted();
+                    return (
+                      <th
+                        key={header.id}
+                        className={`min-w-36 border-b border-slate-200 px-4 py-3 font-medium ${header.column.getCanSort() ? "cursor-pointer select-none" : ""}`}
+                        onClick={() => header.column.getCanSort() && header.column.toggleSorting()}
+                      >
+                        <div className="flex items-center gap-1">
+                          <span>{header.isPlaceholder ? null : <table.FlexRender header={header} />}</span>
+                          {isSorted && <span className="text-xs text-slate-500">{isSorted === "asc" ? "↑" : "↓"}</span>}
+                        </div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              ))}
             </thead>
 
             <tbody>
-              {paginatedData.map((row, rowIndex) => (
-                <tr
-                  key={rowIndex}
-                  className="border-b border-slate-100 hover:bg-slate-50"
-                >
-                  {visibleColumns.map((column) => {
-                    const key = String(
-                      column.accessorKey ?? column.id ?? column.header,
-                    );
-                    const value = getColumnValue(row, key);
-                    const cellContent =
-                      column.cell ?
-                        column.cell({
-                          row: { original: row },
-                          getValue: () => value,
-                        })
-                      : (value ?? "-");
-
-                    return (
-                      <td
-                        key={`${rowIndex}-${key}`}
-                        className="max-w-80 break-words px-4 py-3 text-slate-700"
-                      >
-                        {cellContent}
-                      </td>
-                    );
-                  })}
+              {paginatedRows.map((row) => (
+                <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="max-w-80 break-words px-4 py-3 text-slate-700">
+                      <table.FlexRender cell={cell} />
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -664,29 +534,29 @@ export function DataTable<T extends object>({
         </div>
       )}
 
-      {enablePagination && !isLoading && !error && sortedData.length > 0 && (
+      {enablePagination && !isLoading && !error && sortedRows.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           <span>
-            {sortedData.length} ta yozuvdan{" "}
-            {Math.min((page - 1) * pageSize + 1, sortedData.length)}-
-            {Math.min(page * pageSize, sortedData.length)} ko'rsatilmoqda
+            {sortedRows.length} ta yozuvdan{" "}
+            {Math.min((currentPage - 1) * pageSize + 1, sortedRows.length)}-
+            {Math.min(currentPage * pageSize, sortedRows.length)} ko'rsatilmoqda
           </span>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              disabled={page === 1}
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Oldingi
             </button>
             <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 font-medium text-slate-700">
-              {page}/{totalPages}
+              {currentPage}/{totalPages}
             </span>
             <button
               type="button"
-              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-              disabled={page === totalPages}
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Keyingi

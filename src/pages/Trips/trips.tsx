@@ -1,44 +1,22 @@
 import { useMemo } from "react";
-import { LogistikaService } from "../../services/LogisticanServices";
+import { useTripsData } from "../../services/LogisticanServices";
 import type { Trip } from "../../types/trips";
-import { createTableColumns, DataTable, type TableFilterConfig } from "../../ui/table";
+import { DataTable, type TableFilterConfig } from "../../ui/table";
+import { createTableColumns } from "../../ui/table-columns";
 import { displayJsonValue } from "../../utils/json-records";
 
 const EMPTY_TRIPS: Trip[] = [];
+const TRAILING_COLUMNS = ["created_at", "status"];
 
 export const Trips = () => {
-  const trips = new LogistikaService();
-  const { data: tripsResponse, isLoading, error } = trips.useTripsData();
+  const { data: tripsResponse, isLoading, error } = useTripsData();
   const tripsData = tripsResponse?.items ?? EMPTY_TRIPS;
 
   const columns = useMemo(
     () =>
       createTableColumns<Trip>([
         { key: "id", header: "ID" },
-        {
-          key: "cargo.name",
-          header: "Cargo",
-          children: (row) => (
-            <div className="space-y-1">
-              <div className="font-medium text-slate-800">{displayJsonValue(row.cargo?.name)}</div>
-              <div className="text-xs text-slate-500">{displayJsonValue(row.cargo?.weight_t)} t</div>
-            </div>
-          ),
-        },
-        {
-          key: "route.from",
-          header: "Route",
-          children: (row) => (
-            <div className="space-y-1">
-              <div className="font-medium text-slate-800">
-                {displayJsonValue(row.route?.from)} → {displayJsonValue(row.route?.to)}
-              </div>
-              <div className="text-xs text-slate-500">
-                {displayJsonValue(row.route?.from_country)} → {displayJsonValue(row.route?.to_country)}
-              </div>
-            </div>
-          ),
-        },
+       
         {
           key: "created_at",
           header: "Created At",
@@ -50,16 +28,7 @@ export const Trips = () => {
             </span>
           ),
         },
-        {
-          key: "driver.name",
-          header: "Driver",
-          children: (row) => (
-            <div className="space-y-1">
-              <div className="font-medium text-slate-800">{displayJsonValue(row.driver?.name)}</div>
-              <div className="text-xs text-slate-500">{displayJsonValue(row.driver?.id)}</div>
-            </div>
-          ),
-        },
+       
         {
           key: "status",
           header: "Status",
@@ -122,6 +91,7 @@ export const Trips = () => {
         data={tripsData}
         columns={columns}
         filters={filterConfigs}
+        trailingColumnKeys={TRAILING_COLUMNS}
         enableFilters
         enableSorting
         enableColumnToggle

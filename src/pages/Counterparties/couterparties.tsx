@@ -1,16 +1,18 @@
 import { useMemo } from "react";
-import { LogistikaService } from "../../services/LogisticanServices";
+import { useCounterpartiesData } from "../../services/LogisticanServices";
 import type { Counterparty } from "../../types/counterparties";
-import { createTableColumns, DataTable } from "../../ui/table";
+import { DataTable } from "../../ui/table";
+import { createTableColumns } from "../../ui/table-columns";
 import { displayJsonValue } from "../../utils/json-records";
 
+const EMPTY_COUNTERPARTIES: Counterparty[] = [];
+
 export const Counterparties = () => {
-  const service = new LogistikaService();
   const {
-    data: counterparties = [],
+    data: counterparties = EMPTY_COUNTERPARTIES,
     isLoading,
     error,
-  } = service.useCountriesData();
+  } = useCounterpartiesData();
 
   const filterConfigs = useMemo(
     () => [
@@ -23,11 +25,18 @@ export const Counterparties = () => {
         key: "kind",
         label: "Kind",
         type: "select" as const,
-        options: [
-          { value: "all", label: "Barchasi" },
-          { value: "legal", label: "Legal" },
-          { value: "physical", label: "Physical" },
-        ],
+        options: Array.from(
+          new Set(
+            counterparties
+              .map((item) => typeof item?.kind === "string" ? item.kind.trim() : "")
+              .filter(Boolean),
+          ),
+        )
+          .sort((a, b) => a.localeCompare(b))
+          .map((kind) => ({
+            value: kind,
+            label: kind.charAt(0).toUpperCase() + kind.slice(1).replace(/_/g, " "),
+          })),
       },
       {
         key: "phone",
@@ -50,7 +59,7 @@ export const Counterparties = () => {
         type: "date" as const,
       },
     ],
-    [],
+    [counterparties],
   );
 
   const columns = useMemo(
@@ -61,14 +70,14 @@ export const Counterparties = () => {
           key: "kind",
           header: "Kind",
           render: (row) => {
-            const isLegal = row.kind === "legal";
-
             return (
               <span
                 className={
-                  isLegal
+                  row.kind === "legal"
                     ? "rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800"
-                    : "rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
+                    : row.kind === "physical"
+                      ? "rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
+                      : "rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700"
                 }
               >
                 {displayJsonValue(row.kind)}

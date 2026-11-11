@@ -50,6 +50,45 @@ export function extractRecords<T extends object>(
 
 export type JsonField = { path: string[]; id: string; label: string };
 
+const fieldLabels: Record<string, string> = {
+  "cargo.weight_t": "Cargo Weight (t)",
+  "route.to": "Destination",
+  "route.from_country": "Origin Country",
+  "route.to_country": "Destination Country",
+  "driver.id": "Driver ID",
+  "driver.phone": "Driver Phone",
+  "vehicle.plate": "Vehicle Plate",
+  "vehicle.model": "Vehicle Model",
+  "vehicle.trailer_plate": "Trailer Plate",
+  agreed_price: "Agreed Price",
+  agreed_currency: "Currency",
+  completed_at: "Completed At",
+  has_duplicates: "Has Duplicates",
+  driver: "Driver Details",
+  pinfl: "PINFL",
+};
+
+export function formatFieldLabel(path: string[]): string {
+  const key = path.join(".");
+  if (path.every((part) => !part.includes(".")) && Object.hasOwn(fieldLabels, key)) {
+    return fieldLabels[key];
+  }
+
+  return path
+    .join(" ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .map((word) => {
+      if (["id", "inn", "pinfl", "vat"].includes(word.toLowerCase())) {
+        return word.toUpperCase();
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}
+
 export function discoverFields(rows: object[]): JsonField[] {
   const fields = new Map<string, JsonField>();
   const visit = (value: unknown, path: string[]) => {

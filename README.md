@@ -1,54 +1,63 @@
 # CargoTrack
 
-Loyiha asosiy maqsadi: logistika ma’lumotlarini ko‘rish, filtrlash, saralash va eksport qilish uchun qulay CRM ko‘rinish yaratish.
+Loyihada backend yo‘q. Uchta sahifa o‘z ma’lumotini `data/` papkasidagi JSON fayllardan oladi:
 
-## Nima tayyor
+| Sahifa | Fayl |
+| --- | --- |
+| Trips — reyslar | `data/trips.json` |
+| Counterparties — kontragentlar | `data/counterparties.json` |
+| Licenses — litsenziyalar | `data/licenses.json` |
 
-- Uchala sahifa uchun jadval interfeysi ishlaydi: Trips, Counterparties va Licenses.
-- Ma’lumotlar lokal JSON fayllardan yuklanadi.
-- Jadvalda ishlaydigan umumiy komponent tayyor: filterlar, sort, column yashirish/ko‘rsatish, CSV export.
-- Sticky header va scrollga moslangan jadval ishlaydi.
-- Pagination ishlaydi.
-- Loading, empty va error holatlari qo‘shildi.
-- Ma’lumotlar qisman yoki noto‘g‘ri formatda kelganda ham xavfsiz ishlaydigan logika qo‘shildi.
-- Login/logout holati localStorage orqali saqlanadi, shuning uchun sahifa refresh bo‘lganda ham auth holati saqlanadi.
-- App routing va auth guard ishlaydi.
 
-## Ishga tushirish va scriptlar
+## Ishga tushirish
 
-Proyektni local kompyuterda ishga tushirish uchun quyidagi komandalar ishlatiladi:
+Node.js `20.19` yoki undan keyingi 20-versiya, yoxud `22.12+` va npm kerak. Loyiha papkasida quyidagi buyruqlarni bajaring:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Demo kirish: `demo@example.com`, parol: `demo123`. Login faqat namoyish uchun va brauzerda ishlaydi; u haqiqiy autentifikatsiya yoki ma’lumotlarni himoya qilish vositasi emas. `.env` sozlash talab qilinmaydi.
+Terminalda ko‘rsatilgan lokal manzilni brauzerda oching. Demo tizimga kirish uchun:
 
-JSON fayllar `data/` papkasida joylashgan. Jadval yozuvlardagi qo‘shimcha maydonlarni avtomatik ustun sifatida chiqaradi; `To‘liq yozuv` orqali asl yozuvni ko‘rish mumkin. Ro‘yxat boshqa joyga ko‘chsa, yagona mos ro‘yxat aniqlanadi. Bir nechta noma’lum ro‘yxat yoki ro‘yxat topilmasa, xato ko‘rsatiladi va qaysi biri kerakligini aniqlashtirish uchun kodni moslashtirish lozim.
+- Email: `demo@example.com`
+- Parol: `demo123`
 
-Production build JSON fayllarni o‘z ichiga oladi, shuning uchun `data/` o‘zgartirilgandan keyin `npm run build` ni qayta ishga tushiring. Tekshiruvlarni `npm test` bilan bajarish mumkin.
-## Hozir qaysi narsalar qolgan
+Login faqat namoyish uchun: holat brauzerning `localStorage`ida saqlanadi. Haqiqiy autentifikatsiya va ma’lumotlarni himoyalash uchun backend kerak bo‘ladi.
 
-### 1) Authni haqiqiy tizimga yaqinlashtirish
-- Hozir login/logout localStorage bilan ishlayapti, lekin bu hali full backend auth emas.
-- Ideal holatda JWT/session yoki server-side auth bo‘lishi kerak.
-- Hozirgi holat shunchaki frontend auth state darajasida.
+Boshqa buyruqlar:
 
-### 3) UX ni ozroq “final” qilish
-- Global search qo‘shish mumkin.
-- Clear all filters tugmasi qo‘shish mumkin.
-- Rows per page tanlovini yaxshilash mumkin.
-- Jadvalning responsive va ustun kengliklarini yanada yaxshi qilish mumkin.
+```bash
+npm run lint
+npm run build
+npm run preview
+```
 
-### 4) Demo/taqdimot tayyorgarligi
-- Asosiy ekranlar uchun screenshot yoki 2–3 daqiqalik video qo‘shish yaxshi bo‘ladi.
+`preview`dan oldin `build` bajarilishi kerak. JSON fayllar build tarkibiga qo‘shiladi, shu sababli `data/`dagi o‘zgarishlarni production versiyada ko‘rish uchun build’ni qayta yaratish kerak.
 
-## Qisqa xulosa
+## Jadvaldan foydalanish
 
-Aksariyasi tayyor: jadval, filterlar, sort, export, scroll, pagination, error/loading holatlari, auth session, va ma’lumot xavfsizligi.
+Uchala sahifada bir xil jadval komponenti ishlatilgan:
 
-Qolganlar asosan “production polish” darajasidagi narsalar: real auth, README final, demo tayyorgarlik va qo‘shimcha UX yaxshilanishlar.
+- **Filters Row** — kerakli maydon bo‘yicha matn, sana yoki ro‘yxat orqali filtrlash. Bir nechta filtr bir vaqtda qo‘llanadi.
+- Ustun sarlavhasini bosish — o‘sish yoki kamayish tartibida saralash.
+- **Filters Col** — ustunlarni yashirish va qayta ko‘rsatish.
+- **Excel** — ko‘rinib turgan ustunlar va filtrga mos yozuvlarni CSV formatida yuklab olish. Natijaga faqat joriy sahifa emas, filtrlangan barcha sahifalar kiradi.
+- **Oldingi / Keyingi** — sahifalar bo‘ylab yurish.
+- **To‘liq yozuv** — qator ma’lumotlarini modal oynada ko‘rish; oynadagi **Asl JSON** bo‘limidan asl qiymatlarni ochish mumkin.
 
 
+## Yechim va texnologiyalar
+
+React va TypeScript’ni sahifalar hamda umumiy jadvalni komponentlarga ajratish uchun tanladim. Vite lokal ishga tushirish va production build uchun ishlatiladi. React Router sahifalar o‘rtasida o‘tishni, TanStack Query esa JSON’ni yuklash va loading/error holatlarini boshqaradi. Tailwind CSS interfeysni bezashda, Highcharts esa qo‘shimcha Dashboard sahifasida ishlatilgan.
+
+Jadval logikasi uchun TanStack Table tanlandi. Kutubxona filtrlangan va saralangan qatorlar, sahifalash hamda ustunlar ko‘rinishini boshqaradi. Bu umumiy jadval logikasini uchta sahifada qayta ishlatishga yordam beradi. TanStack Table tayyor dizaynni majburlamaydi, shu sababli interfeysni loyihaga moslashtirish mumkin. Sana va dinamik JSON maydonlariga mos filtrlar alohida sozlangan. CSV eksport esa jadvalning filtrlangan va saralangan natijasidan loyiha kodida tayyorlanadi.
+
+## Ma’lumotlar o‘zgarsa
+
+Uchta JSON’ning tashqi tuzilishi turlicha. Ma’lumotni yuklashda avval fayl uchun ma’lum ro‘yxat yo‘li tekshiriladi. U topilmasa, boshqa joydagi mos ro‘yxat qidiriladi. Yozuvning barcha qatorlaridagi qo‘shimcha maydonlar aniqlanib, jadvalga ustun sifatida qo‘shiladi. Biror qiymat bo‘lmasa, jadvalda `—` ko‘rsatiladi.
+
+Qiyin qarorlardan biri — ro‘yxat boshqa joyga ko‘chganda qaysi massiv asl yozuvlar ekanini aniqlash edi. Hozirgi yechim bitta mos ro‘yxatni avtomatik topishga harakat qiladi; bir nechta noma’lum ro‘yxat topilsa, xato ko‘rsatadi. Bu qidiruv evristikaga asoslangan: boshqa massiv yozuvlarga o‘xshab qolsa, u noto‘g‘ri tanlanishi mumkin. Bunday holatda kerakli ro‘yxat yo‘lini kodda aniqlashtirish talab qilinadi.
+
+Yana bir qaror — muhim maydonlar uchun o‘qishga qulay ustunlarni saqlash va qo‘shimcha maydonlarni avtomatik chiqarish bo‘ldi. Buning evaziga JSON’da maydonlar ko‘paysa jadval kengayadi; kerak bo‘lmagan ustunlarni yashirish yoki gorizontal aylantirish mumkin. `To‘liq yozuv` asl qatorni ko‘rishga yordam beradi.
 

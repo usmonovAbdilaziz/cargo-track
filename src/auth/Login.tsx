@@ -46,13 +46,11 @@ export const Login = () => {
     }
     writeAuthSession(data.email);
     setErrors({});
-    navigate("/trips", { replace: true });
+    navigate("/", { replace: true });
   };
 
   return (
     <div className="mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="mb-6 text-2xl font-semibold text-slate-800">Sign in</h2>
-      <p className="mb-4 text-sm text-slate-600">Demo: demo@example.com / demo123</p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

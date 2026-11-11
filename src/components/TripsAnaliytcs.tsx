@@ -3,6 +3,7 @@ import type { License } from "../types/licenses";
 import type { Trip } from "../types/trips";
 import Highcharts from "highcharts";
 import { HighchartsReact } from "highcharts-react-official";
+import { useEffect, useState } from "react";
 
 interface TripsAnalyticsProps {
   data: Trip[];
@@ -12,6 +13,13 @@ interface TripsAnalyticsProps {
 }
 
 export const TripsAnalytics = (props: TripsAnalyticsProps) => {
+  const [now, setNow] = useState(Date.now);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   if (!props.data || props.data.length === 0) {
     return <div className="text-slate-700">No data available</div>;
   }
@@ -30,7 +38,7 @@ export const TripsAnalytics = (props: TripsAnalyticsProps) => {
   const activeLicenses =
     props.licenses?.filter((license) => {
       const validTo = new Date(license.valid_to);
-      return !Number.isNaN(validTo.getTime()) && validTo > new Date();
+      return !Number.isNaN(validTo.getTime()) && validTo.getTime() > now;
     }).length ?? 0;
 
   const statusCounts = {

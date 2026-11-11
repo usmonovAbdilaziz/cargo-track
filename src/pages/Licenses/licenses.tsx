@@ -1,11 +1,11 @@
 import { useMemo } from "react";
-import { LogistikaService } from "../../services/LogisticanServices";
+import { useLicenseData } from "../../services/LogisticanServices";
 import type { License } from "../../types/licenses";
-import { createTableColumns, DataTable, type TableFilterConfig } from "../../ui/table";
+import { DataTable, type TableFilterConfig } from "../../ui/table";
+import { createTableColumns } from "../../ui/table-columns";
 
 export const Licenses = () => {
-  const lisenses = new LogistikaService();
-  const { data: licenseResponse, isLoading, error } = lisenses.useLicenseData();
+  const { data: licenseResponse, isLoading, error } = useLicenseData();
   const licenses = licenseResponse?.data?.licenses ?? [];
 
   const filterConfigs = useMemo<TableFilterConfig<License>[]>(

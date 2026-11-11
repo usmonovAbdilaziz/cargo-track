@@ -1,13 +1,12 @@
-import { LogistikaService } from "../../services/LogisticanServices";
+import { useCounterpartiesData, useLicenseData, useTripsData } from "../../services/LogisticanServices";
 import { lazy } from "react";
 
 const TripsAnalyticsLazy = lazy(() => import("../../components/TripsAnaliytcs").then((module) => ({ default: module.TripsAnalytics })));
 
 export const Dashboard = () => {
-    const logistikaService = new LogistikaService();
-    const { data: tripsResponse } = logistikaService.useTripsData();
-    const { data: licensesResponse } = logistikaService.useLicenseData();
-    const { data: counterparties = [] } = logistikaService.useCountriesData();
+    const { data: tripsResponse } = useTripsData();
+    const { data: licensesResponse } = useLicenseData();
+    const { data: counterparties = [] } = useCounterpartiesData();
     const tripsData = tripsResponse?.items ?? [];
     const licensesData = licensesResponse?.data?.licenses ?? [];
 
