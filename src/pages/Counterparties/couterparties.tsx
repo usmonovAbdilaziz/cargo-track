@@ -5,7 +5,11 @@ import { createTableColumns, DataTable } from "../../ui/table";
 
 export const Counterparties = () => {
   const service = new LogistikaService();
-  const { data: counterparties = [] } = service.useCountriesData();
+  const {
+    data: counterparties = [],
+    isLoading,
+    error,
+  } = service.useCountriesData();
 
   const filterConfigs = useMemo(
     () => [
@@ -89,6 +93,18 @@ export const Counterparties = () => {
         enableFilters
         enableSorting
         enableColumnToggle
+        isLoading={isLoading}
+        error={error}
+        emptyState={
+          <div className="space-y-2">
+            <p className="text-base font-medium text-slate-700">
+              No counterparties found
+            </p>
+            <p className="text-slate-500">
+              No data matches the current filter set.
+            </p>
+          </div>
+        }
       />
     </div>
   );

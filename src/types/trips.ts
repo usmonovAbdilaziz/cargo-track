@@ -1,6 +1,6 @@
 export interface cargo {
   name: string;
-  weight_t: number;
+  weight_t?: number|string|null;
 }
 export interface route {
   from: string;
@@ -10,14 +10,15 @@ export interface route {
 }
 export interface driver {
   id: string;
-  name: string;
-  phone: string;
+  name?: string;
+  phone?: string;
 }
 export interface vehicle {
-  plate: string;
+  plate?: string;
   model: string;
-  trailer_plate: string;
+  trailer_plate?: string;
 }
+
 
 export interface Trip {
   id: string;
@@ -25,9 +26,9 @@ export interface Trip {
   route: route;
   driver: driver;
   vehicle: vehicle;
-  status: string;
-  agreed_price: number;
-  agreed_currency: string;
+  status: string | null;
+  agreed_price?: number;
+  agreed_currency?: string;
   created_at: string;
   tags: string[];
 }

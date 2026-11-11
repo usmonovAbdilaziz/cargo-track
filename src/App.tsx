@@ -1,17 +1,42 @@
 
-import { useState } from "react";
-import { BrowserRouter, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
+import { readAuthSession } from "./auth/session";
 import { Bodies } from "./utils/body";
 import { Header } from "./utils/header";
 import { Sidebar } from "./utils/sidebar";
 
 function AppShell() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
-  if (!isAuthenticated && location.pathname !== "/auth") {
-    window.location.href = "/auth";
-  }
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(
+    () => readAuthSession().isAuthenticated,
+  );
+
+  useEffect(() => {
+    const syncAuth = () => {
+      setIsAuthenticated(readAuthSession().isAuthenticated);
+    };
+
+    syncAuth();
+    window.addEventListener("storage", syncAuth);
+    return () => window.removeEventListener("storage", syncAuth);
+  }, []);
+
+  useEffect(() => {
+    const session = readAuthSession();
+
+    if (!session.isAuthenticated && location.pathname !== "/auth") {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    if (session.isAuthenticated && location.pathname === "/auth") {
+      navigate("/", { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
   const isAuthRoute = location.pathname === "/auth";
 
   return (
@@ -20,6 +45,7 @@ function AppShell() {
         <Header
           isSidebarOpen={isSidebarOpen}
           onToggle={() => setIsSidebarOpen((prev) => !prev)}
+          isAuthenticated={isAuthenticated}
         />
       )}
 

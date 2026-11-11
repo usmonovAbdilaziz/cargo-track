@@ -1,16 +1,44 @@
 import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { clearAuthSession, readAuthSession } from "../auth/session";
 
 type HeaderProps = {
   isSidebarOpen: boolean;
   onToggle: () => void;
+  isAuthenticated: boolean;
 };
 
-export const Header = ({ isSidebarOpen, onToggle }: HeaderProps) => {
-  const [auth, setAuth] = useState(false);
+export const Header = ({
+  isSidebarOpen,
+  onToggle,
+  isAuthenticated,
+}: HeaderProps) => {
+  const navigate = useNavigate();
+  const [auth, setAuth] = useState(isAuthenticated);
+  const [email, setEmail] = useState<string | null>(null);
 
-  const toggleAuth = () => {
-    setAuth((prev) => !prev);
+  useEffect(() => {
+    const syncAuth = () => {
+      const session = readAuthSession();
+      setAuth(session.isAuthenticated);
+      setEmail(session.email);
+    };
+
+    syncAuth();
+    window.addEventListener("storage", syncAuth);
+    return () => window.removeEventListener("storage", syncAuth);
+  }, []);
+
+  useEffect(() => {
+    setAuth(isAuthenticated);
+  }, [isAuthenticated]);
+
+  const handleLogout = () => {
+    clearAuthSession();
+    setAuth(false);
+    setEmail(null);
+    navigate("/auth", { replace: true });
   };
 
   return (
@@ -23,34 +51,24 @@ export const Header = ({ isSidebarOpen, onToggle }: HeaderProps) => {
           className="rounded-md p-2 hover:bg-gray-300"
           aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
         >
-          {isSidebarOpen ? (
+          {isSidebarOpen ?
             <PanelLeftClose className="h-5 w-5 text-gray-600" />
-          ) : (
-            <PanelLeftOpen className="h-5 w-5 text-gray-600" />
-          )}
+          : <PanelLeftOpen className="h-5 w-5 text-gray-600" />}
         </button>
       </div>
 
-      <div className="relative z-10 flex flex-col items-end">
-        <button
-          type="button"
-          onClick={toggleAuth}
-          className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-        >
-          {auth ? "Close" : "Login"}
-        </button>
-
+      <div className="relative z-10 flex items-center gap-3">
         {auth && (
-          <div className="absolute right-0 top-full mt-2 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
+          <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <span className="text-sm font-medium text-slate-700">
+              {email ?? "Signed in"}
+            </span>
             <button
               type="button"
-              onClick={() => {
-                localStorage.setItem("isAuthenticated", "false");
-                setAuth(false);
-              }}
-              className="rounded bg-red-500 px-2 py font-bold text-white hover:bg-red-700"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-2 rounded bg-red-500 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
             >
-              Logout <LogOut />
+              Logout <LogOut className="h-4 w-4" />
             </button>
           </div>
         )}

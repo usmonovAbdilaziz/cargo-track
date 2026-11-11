@@ -1,5 +1,6 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { CircleX } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { CircleX, Download, Funnel } from "lucide-react";
+import { matchesDateFilter } from "../utils/date-filter";
 
 export type TableColumnConfig<T extends object> = {
   key: keyof T | string;
@@ -25,22 +26,97 @@ export type DataTableOptions = {
   enableFilters?: boolean;
   enableSorting?: boolean;
   enableColumnToggle?: boolean;
+  enableExport?: boolean;
+  enablePagination?: boolean;
+  pageSize?: number;
+};
+
+export type TableErrorState = Error | string | null | undefined;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+};
+
+const formatDisplayValue = (value: unknown, fallback = "—"): string => {
+  if (value == null || value === "") return fallback;
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized || fallback;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : fallback;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => formatDisplayValue(item, ""))
+      .filter((item) => item !== "");
+    return parts.length ? parts.join(", ") : fallback;
+  }
+
+  if (isRecord(value)) {
+    const props = value as { props?: { children?: unknown } };
+    if (props.props && "children" in props.props) {
+      return formatDisplayValue(props.props.children, fallback);
+    }
+
+    const nestedValues = Object.values(value)
+      .map((item) => formatDisplayValue(item, ""))
+      .filter((item) => item !== "");
+
+    return nestedValues.length ? nestedValues.join(", ") : fallback;
+  }
+
+  return fallback;
 };
 
 const getNestedValue = (obj: unknown, path: string): unknown => {
-  if (!obj || typeof obj !== "object") return undefined;
+  if (!obj) return undefined;
 
-  const segments = path.split(".");
+  const segments = path.split(".").filter(Boolean);
+  if (segments.length === 0) return undefined;
+
   let current: unknown = obj;
 
   for (const segment of segments) {
-    if (current == null || typeof current !== "object") return undefined;
+    if (current == null) return undefined;
+
+    if (Array.isArray(current)) {
+      const index = Number(segment);
+      current = Number.isInteger(index) ? current[index] : undefined;
+      continue;
+    }
+
+    if (typeof current !== "object") return undefined;
+
     const record = current as Record<string, unknown>;
     if (!(segment in record)) return undefined;
     current = record[segment];
   }
 
   return current;
+};
+
+const normalizeExportValue = (value: unknown): string => {
+  return formatDisplayValue(value, "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const escapeCsvValue = (value: string) => {
+  const normalized = value.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+  if (/[",]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+
+  return normalized;
 };
 
 export function createTableColumns<T extends object>(
@@ -54,9 +130,9 @@ export function createTableColumns<T extends object>(
 
       if (column.children !== undefined) {
         const content =
-          typeof column.children === "function"
-            ? column.children(info.row.original)
-            : column.children;
+          typeof column.children === "function" ?
+            column.children(info.row.original)
+          : column.children;
 
         if (content !== undefined && content !== null) {
           return content;
@@ -64,7 +140,7 @@ export function createTableColumns<T extends object>(
       }
 
       const value = info.getValue();
-      return value ?? "-";
+      return formatDisplayValue(value, "—");
     },
   }));
 }
@@ -79,6 +155,13 @@ export function DataTable<T extends object>({
   enableFilters = true,
   enableSorting = true,
   enableColumnToggle = true,
+  enableExport = true,
+  enablePagination = true,
+  pageSize = 10,
+  exportFileName,
+  isLoading = false,
+  error,
+  emptyState,
 }: {
   data: T[];
   columns: any[];
@@ -89,12 +172,21 @@ export function DataTable<T extends object>({
   enableFilters?: boolean;
   enableSorting?: boolean;
   enableColumnToggle?: boolean;
+  enableExport?: boolean;
+  enablePagination?: boolean;
+  pageSize?: number;
+  exportFileName?: string;
+  isLoading?: boolean;
+  error?: TableErrorState;
+  emptyState?: ReactNode;
 }) {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [sortState, setSortState] = useState<{
     key: string;
     direction: "asc" | "desc";
   } | null>(null);
+  const [columnFilter, setColumnFilter] = useState<boolean>(false);
+  const [page, setPage] = useState(1);
   const [columnVisibility, setColumnVisibility] = useState<
     Record<string, boolean>
   >(() => {
@@ -149,14 +241,21 @@ export function DataTable<T extends object>({
 
       result = result.filter((item) => {
         const value = getNestedValue(item, key);
-        const stringValue = value == null ? "" : String(value);
-        const filterValue = String(selected).trim();
-
-        if ((config.type ?? "text") === "text") {
-          return stringValue.toLowerCase().includes(filterValue.toLowerCase());
+        if (config.type === "date") {
+          return matchesDateFilter(value, selected);
         }
 
-        return stringValue === filterValue;
+        const stringValue = formatDisplayValue(value, "").toLowerCase();
+        const filterValue = String(selected).trim().toLowerCase();
+
+        if ((config.type ?? "text") === "text") {
+          return stringValue.includes(filterValue);
+        }
+
+        return (
+          stringValue === filterValue
+          || (filterValue === "all" && stringValue !== "")
+        );
       });
     }
 
@@ -169,8 +268,8 @@ export function DataTable<T extends object>({
     return [...filteredData].sort((a, b) => {
       const aValue = getNestedValue(a, sortState.key);
       const bValue = getNestedValue(b, sortState.key);
-      const left = aValue == null ? "" : String(aValue);
-      const right = bValue == null ? "" : String(bValue);
+      const left = formatDisplayValue(aValue, "");
+      const right = formatDisplayValue(bValue, "");
 
       const numericLeft = Number(left);
       const numericRight = Number(right);
@@ -188,6 +287,23 @@ export function DataTable<T extends object>({
       return sortState.direction === "asc" ? comparison : -comparison;
     });
   }, [filteredData, enableSorting, sortState]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(sortedData.length / Math.max(1, pageSize)),
+  );
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  const paginatedData = useMemo(() => {
+    if (!enablePagination) return sortedData;
+
+    const safePageSize = Math.max(1, pageSize);
+    const start = (page - 1) * safePageSize;
+    return sortedData.slice(start, start + safePageSize);
+  }, [enablePagination, page, pageSize, sortedData]);
 
   const updateFilter = (key: string, value: string) => {
     setFilterState((prev) => ({ ...prev, [key]: value }));
@@ -215,58 +331,127 @@ export function DataTable<T extends object>({
     label: String(column.header),
   }));
 
+  const errorMessage =
+    typeof error === "string" ? error
+    : error instanceof Error ? error.message
+    : "Ma`lumotlarni yuklashda xatolik yuz berdi.";
+
+  const exportToCsv = () => {
+    if (!visibleColumns.length || sortedData.length === 0) return;
+
+    const rows: string[] = [
+      visibleColumns
+        .map((column) => escapeCsvValue(String(column.header)))
+        .join(","),
+    ];
+
+    sortedData.forEach((row) => {
+      const values = visibleColumns.map((column) => {
+        const key = String(column.accessorKey ?? column.id ?? column.header);
+        const value = getNestedValue(row, key);
+        const cellContent =
+          column.cell ?
+            column.cell({ row: { original: row }, getValue: () => value })
+          : value;
+
+        return escapeCsvValue(normalizeExportValue(cellContent));
+      });
+
+      rows.push(values.join(","));
+    });
+
+    const csvContent = `\uFEFF${rows.join("\n")}`;
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${exportFileName ?? title ?? "table-export"}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="w-full rounded-lg border border-slate-200 bg-white shadow-sm">
-      {(title || filterConfigs.length > 0 || enableColumnToggle) && (
+      {(title
+        || filterConfigs.length > 0
+        || enableColumnToggle
+        || enableExport) && (
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           {title && (
             <h2 className="text-xl font-semibold text-slate-800">{title}</h2>
           )}
           <div className="flex items-center gap-2">
-            {enableColumnToggle && (
-              <div className="  px-4 py-4">
-                <div className="flex flex-wrap gap-3">
-                  {allColumnOptions.map((option) => (
-                    <label
-                      key={option.key}
-                      className="flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={columnVisibility[option.key] !== false}
-                        onChange={() => toggleColumn(option.key)}
-                        className="h-4 w-4 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
+            {enableFilters && filterConfigs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setColumnFilter((prev) => !prev)}
+                className={`flex gap-2 rounded-md border px-3 py-2 text-sm font-medium transition ${
+                  columnFilter ?
+                    "border-blue-200 bg-blue-50 text-blue-700"
+                  : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <Funnel />
+                Filters Col
+              </button>
             )}
 
             {enableFilters && filterConfigs.length > 0 && (
               <button
                 type="button"
                 onClick={() => setIsFilterOpen((prev) => !prev)}
-                className={`rounded-md border px-3 py-2 text-sm font-medium transition ${
+                className={`flex gap-2 rounded-md border px-3 py-2 text-sm font-medium transition ${
                   isFilterOpen ?
                     "border-blue-200 bg-blue-50 text-blue-700"
                   : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
                 }`}
               >
-                Filters
+                <Funnel />
+                Filters Row
+              </button>
+            )}
+
+            {enableExport && (
+              <button
+                type="button"
+                onClick={exportToCsv}
+                className="flex gap-2 text-[7] rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+              >
+                <Download /> Excel
               </button>
             )}
           </div>
         </div>
       )}
 
+      {isLoading && (
+        <div className="flex items-center justify-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+          Ma’lumotlar yuklanmoqda...
+        </div>
+      )}
+
+      {!isLoading && error && (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
+          <div className="font-medium">
+            Ma’lumotlarni yuklashda xatolik yuz berdi
+          </div>
+          <div className="mt-1">{errorMessage}</div>
+        </div>
+      )}
+
+      {!isLoading && !error && sortedData.length === 0 && (
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600">
+          {emptyState ?? "Hech qanday ma’lumot topilmadi."}
+        </div>
+      )}
+
       {enableFilters && isFilterOpen && filterConfigs.length > 0 && (
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-4">
-          <div className="flex items-center justify-between gap-3 pb-3">
-            <h3 className="text-base font-semibold text-slate-800">Filters</h3>
-          </div>
-
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filterConfigs.map((config) => {
               const key = String(config.key);
@@ -274,7 +459,7 @@ export function DataTable<T extends object>({
               const filterType = config.type ?? "text";
 
               return (
-                <div key={key} className="space-y-2">
+                <div key={key} className="space-y-2 text-sm">
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-slate-700">
                       {config.label ?? key}
@@ -347,70 +532,123 @@ export function DataTable<T extends object>({
           </div>
         </div>
       )}
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-50 text-slate-700">
-            <tr>
-              {visibleColumns.map((column) => {
-                const key = String(
-                  column.accessorKey ?? column.id ?? column.header,
-                );
-                const isSorted = sortState?.key === key;
-
-                return (
-                  <th
-                    key={key}
-                    className={`border-b border-slate-200 px-4 py-3 font-medium ${enableSorting ? "cursor-pointer select-none" : ""}`}
-                    onClick={() => enableSorting && handleSort(key)}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>{column.header}</span>
-                      {enableSorting && isSorted && (
-                        <span className="text-xs text-slate-500">
-                          {sortState?.direction === "asc" ? "↑" : "↓"}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-
-          <tbody>
-            {sortedData.map((row, rowIndex) => (
-              <tr
-                key={rowIndex}
-                className="border-b border-slate-100 hover:bg-slate-50"
+      {columnFilter && enableColumnToggle && (
+        <div className="  px-4 py-4">
+          <div className="flex flex-wrap gap-3">
+            {allColumnOptions.map((option) => (
+              <label
+                key={option.key}
+                className="flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
               >
+                <input
+                  type="checkbox"
+                  checked={columnVisibility[option.key] !== false}
+                  onChange={() => toggleColumn(option.key)}
+                  className="h-4 w-4 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!isLoading && !error && sortedData.length > 0 && (
+        <div className="max-h-[70vh] overflow-auto w-full">
+          <table className="min-w-full table-fixed text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-700 shadow-sm">
+              <tr>
                 {visibleColumns.map((column) => {
                   const key = String(
                     column.accessorKey ?? column.id ?? column.header,
                   );
-                  const value = getNestedValue(row, key);
-                  const cellContent =
-                    column.cell ?
-                      column.cell({
-                        row: { original: row },
-                        getValue: () => value,
-                      })
-                    : (value ?? "-");
+                  const isSorted = sortState?.key === key;
 
                   return (
-                    <td
-                      key={`${rowIndex}-${key}`}
-                      className="px-4 py-3 text-slate-700"
+                    <th
+                      key={key}
+                      className={`border-b border-slate-200 px-4 py-3 font-medium ${enableSorting ? "cursor-pointer select-none" : ""}`}
+                      onClick={() => enableSorting && handleSort(key)}
                     >
-                      {cellContent}
-                    </td>
+                      <div className="flex items-center gap-1">
+                        <span>{column.header}</span>
+                        {enableSorting && isSorted && (
+                          <span className="text-xs text-slate-500">
+                            {sortState?.direction === "asc" ? "↑" : "↓"}
+                          </span>
+                        )}
+                      </div>
+                    </th>
                   );
                 })}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+
+            <tbody>
+              {paginatedData.map((row, rowIndex) => (
+                <tr
+                  key={rowIndex}
+                  className="border-b border-slate-100 hover:bg-slate-50"
+                >
+                  {visibleColumns.map((column) => {
+                    const key = String(
+                      column.accessorKey ?? column.id ?? column.header,
+                    );
+                    const value = getNestedValue(row, key);
+                    const cellContent =
+                      column.cell ?
+                        column.cell({
+                          row: { original: row },
+                          getValue: () => value,
+                        })
+                      : (value ?? "-");
+
+                    return (
+                      <td
+                        key={`${rowIndex}-${key}`}
+                        className="px-4 py-3 text-slate-700"
+                      >
+                        {cellContent}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {enablePagination && !isLoading && !error && sortedData.length > 0 && (
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <span>
+            {sortedData.length} ta yozuvdan{" "}
+            {Math.min((page - 1) * pageSize + 1, sortedData.length)}-
+            {Math.min(page * pageSize, sortedData.length)} ko'rsatilmoqda
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page === 1}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Oldingi
+            </button>
+            <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 font-medium text-slate-700">
+              {page}/{totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={page === totalPages}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Keyingi
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

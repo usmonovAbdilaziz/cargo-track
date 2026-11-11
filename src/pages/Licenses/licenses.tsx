@@ -5,7 +5,7 @@ import { createTableColumns, DataTable, type TableFilterConfig } from "../../ui/
 
 export const Licenses = () => {
   const lisenses = new LogistikaService();
-  const { data: licenseResponse } = lisenses.useLicenseData();
+  const { data: licenseResponse, isLoading, error } = lisenses.useLicenseData();
   const licenses = licenseResponse?.data?.licenses ?? [];
 
   const filterConfigs = useMemo<TableFilterConfig<License>[]>(
@@ -53,6 +53,18 @@ export const Licenses = () => {
         enableFilters
         enableSorting
         enableColumnToggle
+        isLoading={isLoading}
+        error={error}
+        emptyState={
+          <div className="space-y-2">
+            <p className="text-base font-medium text-slate-700">
+              No licenses found
+            </p>
+            <p className="text-slate-500">
+              There are no license records for the current filters.
+            </p>
+          </div>
+        }
       />
     </div>
   );

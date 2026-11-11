@@ -2,6 +2,7 @@ import { LogIn } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
+import { writeAuthSession } from "./session";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address" }),
@@ -43,7 +44,7 @@ export const Login = () => {
       });
       return;
     }
-    localStorage.setItem("isAuthenticated", "true");
+    writeAuthSession(data.email);
     setErrors({});
     navigate("/trips", { replace: true });
   };

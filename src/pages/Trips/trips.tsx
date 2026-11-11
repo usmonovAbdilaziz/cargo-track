@@ -5,7 +5,7 @@ import { createTableColumns, DataTable, type TableFilterConfig } from "../../ui/
 
 export const Trips = () => {
   const trips = new LogistikaService();
-  const { data: tripsResponse } = trips.useTripsData();
+  const { data: tripsResponse, isLoading, error } = trips.useTripsData();
   const tripsData = tripsResponse?.items ?? [];
 
   const columns = useMemo(
@@ -90,18 +90,23 @@ export const Trips = () => {
         key: "status",
         label: "Status",
         type: "select",
-        options: [
-          { value: "all", label: "All" },
-          { value: "DISPUTED", label: "Disputed" },
-          { value: "SCHEDULED", label: "Scheduled" },
-          { value: "IN_PROGRESS", label: "In Progress" },
-          { value: "COMPLETED", label: "Completed" },
-          { value: "CANCELLED", label: "Cancelled" },
-          { value: "ARCHIVED_V2", label: "Archived" },
-        ],
+        options: Array.from(
+          new Set(
+            (Array.isArray(tripsData) ? tripsData : [])
+              .map((trip) =>
+                typeof trip?.status === "string" ? trip.status.trim() : "",
+              )
+              .filter((status): status is string => Boolean(status)),
+          ),
+        )
+          .sort((a, b) => a.localeCompare(b))
+          .map((status) => ({
+            value: status,
+            label: status.replace(/_/g, " "),
+          })),
       },
     ],
-    [],
+    [tripsData],
   );
 
   return (
@@ -114,6 +119,18 @@ export const Trips = () => {
         enableFilters
         enableSorting
         enableColumnToggle
+        isLoading={isLoading}
+        error={error}
+        emptyState={
+          <div className="space-y-2">
+            <p className="text-base font-medium text-slate-700">
+              No trips found
+            </p>
+            <p className="text-slate-500">
+              Try changing the filters or come back later.
+            </p>
+          </div>
+        }
       />
     </div>
   );
